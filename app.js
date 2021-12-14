@@ -1,147 +1,148 @@
-var express = require('express');
+var express = require("express");
+const { initializeEthMatchProxy, newGameSession, addLogToSession, addPlayer, getSessionPlayers, endGame } = require("./ethmatch");
 var app = express();
-app.use(express.static('public'));
-app.use(express.static('dashboard'));
-var http = require('http').Server(app);
-var io = require('socket.io')(http);
-var port = process.env.PORT || 3000;
-
+const { Chess } = require("chess.js");
+app.use(express.static("public"));
+app.use(express.static("dashboard"));
+var http = require("http").Server(app);
+var io = require("socket.io")(http);
+var port = process.env.PORT || 3005;
+require("dotenv").config();
 var lobbyUsers = {};
 var users = {};
 var activeGames = {};
-
-app.get('/', function(req, res) {
- res.sendFile(__dirname + '/public/default.html');
-
+initializeEthMatchProxy({ host: process.env.PROXY ? process.env.PROXY : "http://localhost:3333" });
+app.use("/public", express.static("public"));
+app.get("/ethgame/:address/:lobby/:signature", (req, res) => {
+    newGameSession({
+        lobbyId: req.params.lobby,
+        player: req.params.address,
+        signature: req.params.signature
+    })
+        .then((metadata) => {
+            console.log(metadata);
+            if (metadata.valid) {
+                res.sendFile(__dirname + "/public/index.html");
+            } else {
+                res.status(500).end("Invalid request");
+            }
+        })
+        .catch((err) => {
+            res.status(500).end("Invalid request");
+        });
+});
+app.get("/dashboard/", function (req, res) {
+    res.sendFile(__dirname + "/dashboard/dashboard.html");
 });
 
-app.get('/dashboard/', function(req, res) {
- res.sendFile(__dirname + '/dashboard/dashboard.html');
-});
-
-io.on('connection', function(socket) {
-    console.log('new connection ' + socket);
-    
-    socket.on('login', function(userId) {
-       doLogin(socket, userId);
-    });
-
-    function doLogin(socket, userId) {
-        socket.userId = userId;  
-     
-        if (!users[userId]) {    
-            console.log('creating new user');
-            users[userId] = {userId: socket.userId, games:{}};
-        } else {
-            console.log('user found!');
-            Object.keys(users[userId].games).forEach(function(gameId) {
-                console.log('gameid - ' + gameId);
-            });
+io.on("connection", function (socket) {
+    console.log("new connection ", socket.id);
+    socket.on("JOIN_SESSION", function (data) {
+        console.log(data);
+        if (data.lobbyId && data.player && data.signature) {
+            setTimeout(() => {
+                if (!activeGames[data.lobbyId]) {
+                    addPlayer({
+                        lobbyId: data.lobbyId,
+                        signature: data.signature,
+                        player: data.player,
+                        side: "white",
+                        socket
+                    })
+                        .then((joinReq) => {
+                            console.log(joinReq);
+                            if (joinReq.valid) {
+                                let opponentId = null;
+                                console.log(getSessionPlayers({ lobbyId: data.lobbyId }));
+                                for (let i of getSessionPlayers({ lobbyId: data.lobbyId })) {
+                                    if (i != data.player) {
+                                        opponentId = i;
+                                        break;
+                                    }
+                                }
+                                var game = {
+                                    id: data.lobbyId,
+                                    board: null,
+                                    locked: false,
+                                    users: { white: data.player, black: opponentId }
+                                };
+                                socket.gameId = game.id;
+                                activeGames[game.id] = game;
+                                lobbyUsers[data.player].emit("GAME_READY", { id: game.id });
+                            } else {
+                                lobbyUsers[data.player].emit("ERROR", "invalid request");
+                            }
+                        })
+                        .catch((err) => {
+                            // console.log(err);
+                        });
+                } else {
+                    if (!activeGames[data.lobbyId].locked) {
+                        addPlayer({
+                            lobbyId: data.lobbyId,
+                            signature: data.signature,
+                            player: data.player,
+                            side: "black",
+                            socket
+                        }).then((joinReq) => {
+                            if (joinReq.valid) {
+                                activeGames[data.lobbyId].locked = true;
+                                console.log(activeGames[data.lobbyId]);
+                                lobbyUsers[activeGames[data.lobbyId].users.white].emit("LOBBY_READY", { game: activeGames[data.lobbyId], color: "white" });
+                                lobbyUsers[data.player].emit("LOBBY_READY", { game: activeGames[data.lobbyId], color: "black" });
+                            }
+                        });
+                    } else {
+                        lobbyUsers[data.player].emit("ERROR", "ERR ! Lobby is locked cannot rejoin");
+                    }
+                }
+            }, Math.floor(Math.random() * (5000 - 2000 + 1) + 2000));
         }
-        
-        socket.emit('login', {users: Object.keys(lobbyUsers), 
-                              games: Object.keys(users[userId].games)});
-        lobbyUsers[userId] = socket;
-        
-        socket.broadcast.emit('joinlobby', socket.userId);
-    }
-    
-    socket.on('invite', function(opponentId) {
-        console.log('got an invite from: ' + socket.userId + ' --> ' + opponentId);
-        
-        socket.broadcast.emit('leavelobby', socket.userId);
-        socket.broadcast.emit('leavelobby', opponentId);
-      
-       
-        var game = {
-            id: Math.floor((Math.random() * 100) + 1),
-            board: null, 
-            users: {white: socket.userId, black: opponentId}
+    });
+    socket.on("REGISTER_SESSION", (player) => {
+        users[player] = {
+            address: player
         };
-        
-        socket.gameId = game.id;
-        activeGames[game.id] = game;
-        
-        users[game.users.white].games[game.id] = game.id;
-        users[game.users.black].games[game.id] = game.id;
-  
-        console.log('starting game: ' + game.id);
-        lobbyUsers[game.users.white].emit('joingame', {game: game, color: 'white'});
-        lobbyUsers[game.users.black].emit('joingame', {game: game, color: 'black'});
-        
-        delete lobbyUsers[game.users.white];
-        delete lobbyUsers[game.users.black];   
-        
-        socket.broadcast.emit('gameadd', {gameId: game.id, gameState:game});
+        lobbyUsers[player] = socket;
+        socket.emit("REGISTERED", player);
     });
-    
-     socket.on('resumegame', function(gameId) {
-        console.log('ready to resume game: ' + gameId);
-         
-        socket.gameId = gameId;
-        var game = activeGames[gameId];
-        
-        users[game.users.white].games[game.id] = game.id;
-        users[game.users.black].games[game.id] = game.id;
-  
-        console.log('resuming game: ' + game.id);
-        if (lobbyUsers[game.users.white]) {
-            lobbyUsers[game.users.white].emit('joingame', {game: game, color: 'white'});
-            delete lobbyUsers[game.users.white];
-        }
-        
-        if (lobbyUsers[game.users.black]) {
-            lobbyUsers[game.users.black] && 
-            lobbyUsers[game.users.black].emit('joingame', {game: game, color: 'black'});
-            delete lobbyUsers[game.users.black];  
-        }
-    });
-    
-    socket.on('move', function(msg) {
-        socket.broadcast.emit('move', msg);
+    socket.on("MOVE", function (msg) {
+        console.log("event", msg);
+        socket.broadcast.emit("MOVE", msg);
         activeGames[msg.gameId].board = msg.board;
-        console.log(msg);
-    });
-    
-    socket.on('resign', function(msg) {
-        console.log("resign: " + msg);
+        addLogToSession({
+            lobbyId: msg.gameId,
+            data: msg
+        });
 
-        delete users[activeGames[msg.gameId].users.white].games[msg.gameId];
-        delete users[activeGames[msg.gameId].users.black].games[msg.gameId];
-        delete activeGames[msg.gameId];
-
-        socket.broadcast.emit('resign', msg);
+        let currentBoard = new Chess(msg.board);
+        if (currentBoard.in_checkmate()) {
+            if (currentBoard.turn() == "w") {
+                endGame({
+                    lobbyId: msg.gameId,
+                    winner: activeGames[msg.gameId].users.black
+                });
+                lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You won the game! copy the current FEN and claim your winnings" });
+                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You lost the game! better luck next time" });
+            } else {
+                endGame({
+                    lobbyId: msg.gameId,
+                    winner: activeGames[msg.gameId].users.white
+                });
+                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You won the game! copy the current FEN and claim your winnings" });
+                lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You lost the game! better luck next time" });
+            }
+        } else if (currentBoard.in_stalemate() || currentBoard.in_draw() || currentBoard.insufficient_material()) {
+            endGame({
+                lobbyId: msg.gameId,
+                winner: null
+            });
+            lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "The game resulted in a draw, redeem your pool after the timeout" });
+            lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "The game resulted in a draw, redeem your pool after the timeout" });
+        }
     });
-    
-
-    socket.on('disconnect', function(msg) {
-        
-      console.log(msg);
-      
-      if (socket && socket.userId && socket.gameId) {
-        console.log(socket.userId + ' disconnected');
-        console.log(socket.gameId + ' disconnected');
-      }
-      
-      delete lobbyUsers[socket.userId];
-      
-      socket.broadcast.emit('logout', {
-        userId: socket.userId,
-        gameId: socket.gameId
-      });
-    });
-    
-    /////////////////////
-    // Dashboard messages 
-    /////////////////////
-    
-    socket.on('dashboardlogin', function() {
-        console.log('dashboard joined');
-        socket.emit('dashboardlogin', {games: activeGames}); 
-    });
-           
 });
 
-http.listen(port, function() {
-    console.log('listening on *: ' + port);
+http.listen(port, function () {
+    console.log("listening on *: " + port);
 });

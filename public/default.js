@@ -1,195 +1,104 @@
-
-(function () {
-    
-    WinJS.UI.processAll().then(function () {
-      
-      var socket, serverGame;
-      var username, playerColor;
-      var game, board;
-      var usersOnline = [];
-      var myGames = [];
-      socket = io();
-           
-      //////////////////////////////
-      // Socket.io handlers
-      ////////////////////////////// 
-      
-      socket.on('login', function(msg) {
-            usersOnline = msg.users;
-            updateUserList();
-            
-            myGames = msg.games;
-            updateGamesList();
-      });
-      
-      socket.on('joinlobby', function (msg) {
-        addUser(msg);
-      });
-      
-       socket.on('leavelobby', function (msg) {
-        removeUser(msg);
-      });
-      
-      socket.on('gameadd', function(msg) {
-      });
-      
-      socket.on('resign', function(msg) {
-            if (msg.gameId == serverGame.id) {
-
-              socket.emit('login', username);
-
-              $('#page-lobby').show();
-              $('#page-game').hide();
-            }            
-      });
-                  
-      socket.on('joingame', function(msg) {
-        console.log("joined as game id: " + msg.game.id );   
+$(document).ready(function () {
+    const addLog = (data, type = 0) => {
+        switch (type) {
+            case 0:
+                $("#game-logs").prepend(`<p>${new Date().toISOString()}: ${data}</p>`);
+                break;
+            case 1:
+                $("#game-logs").prepend(`<p style="color:#27AE60;">${new Date().toISOString()}: ${data}</p>`);
+                break;
+            case 2:
+                $("#game-logs").prepend(`<p style="color:#E74C3C;">${new Date().toISOString()}: ${data}</p>`);
+        }
+    };
+    const addSessionDetails = (player, lobbyId, signature) => {
+        $("#session").html(`<p>PLAYER:${player}<br>LOBBY:${lobbyId}</p>`);
+    };
+    const updateFen = (fen) => {
+        $("#fen").html(`<p style="color:#27AE60;">FEN: ${fen}</p>`);
+    };
+    var socket, serverGame;
+    var playerColor;
+    var game, board;
+    socket = io();
+    try {
+        joinData = {
+            player: window.location.pathname.split("/")[2],
+            lobbyId: window.location.pathname.split("/")[3],
+            signature: window.location.pathname.split("/")[4]
+        };
+        socket.emit("REGISTER_SESSION", joinData.player);
+        addSessionDetails(joinData.player, joinData.lobbyId, joinData.signature);
+        socket.on("REGISTERED", () => {
+            addLog("registered session on server", 1);
+            socket.emit("JOIN_SESSION", joinData);
+        });
+    } catch (error) {
+        alert("failed to parse joinData");
+    }
+    socket.on("GAME_READY", () => {
+        addLog("game ready, waiting for opponent to join", 1);
+    });
+    socket.on("LOBBY_READY", function (msg) {
+        console.log("joined as game id: " + msg.game.id);
+        addLog(`joined game ${msg.game.id}`, 1);
         playerColor = msg.color;
         initGame(msg.game);
-        
-        $('#page-lobby').hide();
-        $('#page-game').show();
-        
-      });
-        
-      socket.on('move', function (msg) {
+        $("#page-game").show();
+    });
+    socket.on("GAME_END", (msg) => {
+        addLog(`${msg.message}`, 2);
+        $("#page-game").hide();
+    });
+    socket.on("ERROR", (msg) => {
+        addLog(`${msg}`, 2);
+        $("#page-game").hide();
+    });
+    socket.on("MOVE", function (msg) {
         if (serverGame && msg.gameId === serverGame.id) {
-           game.move(msg.move);
-           board.position(game.fen());
+            game.move(msg.move);
+            board.position(game.fen());
+            updateFen(game.fen());
         }
-      });
-     
-      
-      socket.on('logout', function (msg) {
-        removeUser(msg.username);
-      });
-      
+    });
+    var initGame = function (serverGameState) {
+        serverGame = serverGameState;
 
-      
-      //////////////////////////////
-      // Menus
-      ////////////////////////////// 
-      $('#login').on('click', function() {
-        username = $('#username').val();
-        
-        if (username.length > 0) {
-            $('#userLabel').text(username);
-            socket.emit('login', username);
-            
-            $('#page-login').hide();
-            $('#page-lobby').show();
-        } 
-      });
-      
-      $('#game-back').on('click', function() {
-        socket.emit('login', username);
-        
-        $('#page-game').hide();
-        $('#page-lobby').show();
-      });
-      
-      $('#game-resign').on('click', function() {
-        socket.emit('resign', {userId: username, gameId: serverGame.id});
-        
-        socket.emit('login', username);
-        $('#page-game').hide();
-        $('#page-lobby').show();
-      });
-      
-      var addUser = function(userId) {
-        usersOnline.push(userId);
-        updateUserList();
-      };
-    
-     var removeUser = function(userId) {
-          for (var i=0; i<usersOnline.length; i++) {
-            if (usersOnline[i] === userId) {
-                usersOnline.splice(i, 1);
-            }
-         }
-         
-         updateUserList();
-      };
-      
-      var updateGamesList = function() {
-        document.getElementById('gamesList').innerHTML = '';
-        myGames.forEach(function(game) {
-          $('#gamesList').append($('<button>')
-                        .text('#'+ game)
-                        .on('click', function() {
-                          socket.emit('resumegame',  game);
-                        }));
-        });
-      };
-      
-      var updateUserList = function() {
-        document.getElementById('userList').innerHTML = '';
-        usersOnline.forEach(function(user) {
-          $('#userList').append($('<button>')
-                        .text(user)
-                        .on('click', function() {
-                          socket.emit('invite',  user);
-                        }));
-        });
-      };
-           
-      //////////////////////////////
-      // Chess Game
-      ////////////////////////////// 
-      
-      var initGame = function (serverGameState) {
-        serverGame = serverGameState; 
-        
-          var cfg = {
+        var cfg = {
             draggable: true,
             showNotation: false,
             orientation: playerColor,
-            position: serverGame.board ? serverGame.board : 'start',
+            position: serverGame.board ? serverGame.board : "start",
             onDragStart: onDragStart,
             onDrop: onDrop,
             onSnapEnd: onSnapEnd
-          };
-               
-          game = serverGame.board ? new Chess(serverGame.board) : new Chess();
-          board = new ChessBoard('game-board', cfg);
-      }
-       
-      // do not pick up pieces if the game is over
-      // only pick up pieces for the side to move
-      var onDragStart = function(source, piece, position, orientation) {
-        if (game.game_over() === true ||
-            (game.turn() === 'w' && piece.search(/^b/) !== -1) ||
-            (game.turn() === 'b' && piece.search(/^w/) !== -1) ||
-            (game.turn() !== playerColor[0])) {
-          return false;
-        }
-      };  
-      
-    
-      
-      var onDrop = function(source, target) {
-        // see if the move is legal
-        var move = game.move({
-          from: source,
-          to: target,
-          promotion: 'q' // NOTE: always promote to a queen for example simplicity
-        });
-      
-        // illegal move
-        if (move === null) { 
-          return 'snapback';
-        } else {
-           socket.emit('move', {move: move, gameId: serverGame.id, board: game.fen()});
-        }
-      
-      };
-      
-      // update the board position after the piece snap 
-      // for castling, en passant, pawn promotion
-      var onSnapEnd = function() {
-        board.position(game.fen());
-      };
-    });
-})();
+        };
 
+        game = serverGame.board ? new Chess(serverGame.board) : new Chess();
+        board = new ChessBoard("game-board", cfg);
+    };
+    var onDragStart = function (source, piece, position, orientation) {
+        if (game.game_over() === true || (game.turn() === "w" && piece.search(/^b/) !== -1) || (game.turn() === "b" && piece.search(/^w/) !== -1) || game.turn() !== playerColor[0]) {
+            return false;
+        }
+    };
+
+    var onDrop = function (source, target) {
+        var move = game.move({
+            from: source,
+            to: target,
+            promotion: "q"
+        });
+
+        if (move === null) {
+            return "snapback";
+        } else {
+            socket.emit("MOVE", { move: move, gameId: serverGame.id, board: game.fen() });
+            updateFen(game.fen());
+        }
+    };
+
+    var onSnapEnd = function () {
+        board.position(game.fen());
+    };
+});

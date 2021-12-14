@@ -30,3 +30,5 @@ node_modules
 .vscode
 Code
 typings
+.env
+node_modules
