@@ -120,14 +120,16 @@ io.on("connection", function (socket) {
             if (currentBoard.turn() == "w") {
                 endGame({
                     lobbyId: msg.gameId,
-                    winner: activeGames[msg.gameId].users.black
+                    winner: activeGames[msg.gameId].users.black,
+                    finalState: currentBoard.fen()
                 });
                 lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You won the game! copy the current FEN and claim your winnings" });
                 lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You lost the game! better luck next time" });
             } else {
                 endGame({
                     lobbyId: msg.gameId,
-                    winner: activeGames[msg.gameId].users.white
+                    winner: activeGames[msg.gameId].users.white,
+                    finalState: currentBoard.fen()
                 });
                 lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You won the game! copy the current FEN and claim your winnings" });
                 lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You lost the game! better luck next time" });
@@ -135,7 +137,8 @@ io.on("connection", function (socket) {
         } else if (currentBoard.in_stalemate() || currentBoard.in_draw() || currentBoard.insufficient_material()) {
             endGame({
                 lobbyId: msg.gameId,
-                winner: null
+                winner: null,
+                finalState: currentBoard.fen()
             });
             lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "The game resulted in a draw, redeem your pool after the timeout" });
             lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "The game resulted in a draw, redeem your pool after the timeout" });

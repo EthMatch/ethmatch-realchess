@@ -68,11 +68,14 @@ const addLogToSession = ({ lobbyId = null, data = null }) => {
     }
 };
 
-const endGame = ({ lobbyId = null, winner = null }) => {
-    console.log(winner, sessions[lobbyId]);
+const endGame = ({ lobbyId = null, winner = null, finalState = null }) => {
     return new Promise((resolve, reject) => {
-
-    })
+        apiProvider.post("/submit_result", {
+            gameData: finalState,
+            winner,
+            id: lobbyId
+        });
+    });
 };
 
 module.exports = {
