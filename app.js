@@ -11,7 +11,7 @@ require("dotenv").config();
 var lobbyUsers = {};
 var users = {};
 var activeGames = {};
-initializeEthMatchProxy({ host: process.env.PROXY ? process.env.PROXY : "http://localhost:3333" });
+initializeEthMatchProxy({ host: process.env.PROXY ? process.env.PROXY : "http://localhost:3004" });
 app.use("/public", express.static("public"));
 app.get("/ethgame/:address/:lobby/:signature", (req, res) => {
     newGameSession({
@@ -123,16 +123,16 @@ io.on("connection", function (socket) {
                     winner: activeGames[msg.gameId].users.black,
                     finalState: currentBoard.fen()
                 });
-                lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You won the game! copy the current FEN and claim your winnings" });
-                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You lost the game! better luck next time" });
+                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You won the game! claim your winnings now" });
+                lobbyUsers[activeGames[msg.gameId].users.while].emit("GAME_END", { message: "You lost the game! better luck next time" });
             } else {
                 endGame({
                     lobbyId: msg.gameId,
                     winner: activeGames[msg.gameId].users.white,
                     finalState: currentBoard.fen()
                 });
-                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You won the game! copy the current FEN and claim your winnings" });
-                lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You lost the game! better luck next time" });
+                lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You won the game! claim your winnings now" });
+                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You lost the game! better luck next time" });
             }
         } else if (currentBoard.in_stalemate() || currentBoard.in_draw() || currentBoard.insufficient_material()) {
             endGame({
