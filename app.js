@@ -107,42 +107,45 @@ io.on("connection", function (socket) {
         socket.emit("REGISTERED", player);
     });
     socket.on("MOVE", function (msg) {
-        console.log("event", msg);
-        socket.broadcast.emit("MOVE", msg);
-        activeGames[msg.gameId].board = msg.board;
-        addLogToSession({
-            lobbyId: msg.gameId,
-            data: msg
-        });
-
-        let currentBoard = new Chess(msg.board);
-        if (currentBoard.in_checkmate()) {
-            if (currentBoard.turn() == "w") {
-                endGame({
-                    lobbyId: msg.gameId,
-                    winner: activeGames[msg.gameId].users.black,
-                    finalState: currentBoard.fen()
-                });
-                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You won the game! claim your winnings now" });
-                lobbyUsers[activeGames[msg.gameId].users.while].emit("GAME_END", { message: "You lost the game! better luck next time" });
-            } else {
-                endGame({
-                    lobbyId: msg.gameId,
-                    winner: activeGames[msg.gameId].users.white,
-                    finalState: currentBoard.fen()
-                });
-                lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You won the game! claim your winnings now" });
-                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You lost the game! better luck next time" });
-            }
-        } else if (currentBoard.in_stalemate() || currentBoard.in_draw() || currentBoard.insufficient_material()) {
-            endGame({
+        try {
+            console.log("event", msg);
+            socket.broadcast.emit("MOVE", msg);
+            activeGames[msg.gameId].board = msg.board;
+            addLogToSession({
                 lobbyId: msg.gameId,
-                winner: null,
-                finalState: currentBoard.fen()
+                data: msg
             });
-            lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "The game resulted in a draw, redeem your pool after the timeout" });
-            lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "The game resulted in a draw, redeem your pool after the timeout" });
-        }
+
+            let currentBoard = new Chess(msg.board);
+            if (currentBoard.in_checkmate()) {
+                if (currentBoard.turn() == "w") {
+                    endGame({
+                        lobbyId: msg.gameId,
+                        winner: activeGames[msg.gameId].users.black,
+                        finalState: currentBoard.fen()
+                    });
+
+                    lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You won the game! claim your winnings now" });
+                    lobbyUsers[activeGames[msg.gameId].users.while].emit("GAME_END", { message: "You lost the game! better luck next time" });
+                } else {
+                    endGame({
+                        lobbyId: msg.gameId,
+                        winner: activeGames[msg.gameId].users.white,
+                        finalState: currentBoard.fen()
+                    });
+                    lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "You won the game! claim your winnings now" });
+                    lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "You lost the game! better luck next time" });
+                }
+            } else if (currentBoard.in_stalemate() || currentBoard.in_draw() || currentBoard.insufficient_material()) {
+                endGame({
+                    lobbyId: msg.gameId,
+                    winner: null,
+                    finalState: currentBoard.fen()
+                });
+                lobbyUsers[activeGames[msg.gameId].users.white].emit("GAME_END", { message: "The game resulted in a draw, redeem your pool after the timeout" });
+                lobbyUsers[activeGames[msg.gameId].users.black].emit("GAME_END", { message: "The game resulted in a draw, redeem your pool after the timeout" });
+            }
+        } catch (err) {}
     });
 });
 
